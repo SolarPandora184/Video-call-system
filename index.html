@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Video Call</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      background: #111;
+      color: white;
+      font-family: sans-serif;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+    video {
+      width: 45%;
+      border-radius: 8px;
+      margin: 1rem;
+      background: black;
+    }
+    #videos {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    input, button {
+      padding: 0.5rem;
+      margin: 0.5rem;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Video Call</h1>
+  <input type="text" id="roomInput" placeholder="Room Name" />
+  <button onclick="startCall()">Join Room</button>
+
+  <div id="videos">
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
+  </div>
+
+  <!-- SimplePeer via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+
+  <!-- Firebase v9+ as module -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getDatabase, ref, push, onValue, onDisconnect, remove, set, get } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics.js";
+
+    // ✅ Your Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyDZXaf9PO6E69KNiv-yjtwFxGe8c6jyz3c",
+      authDomain: "video-call-system-140da.firebaseapp.com",
+      projectId: "video-call-system-140da",
+      storageBucket: "video-call-system-140da.appspot.com",
+      messagingSenderId: "818151254357",
+      appId: "1:818151254357:web:00c81df2d11a9118ffe7dc",
+      measurementId: "G-XX57FM9DPN",
+      databaseURL: "https://video-call-system-140da-default-rtdb.firebaseio.com"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    getAnalytics(app);
+
+    let localStream;
+    let peer;
+    let roomName;
+    let isCaller = false;
+
+    async function startCall() {
+      roomName = document.getElementById("roomInput").value.trim();
+      if (!roomName) return alert("Enter a room name.");
+
+      const localVideo = document.getElementById("localVideo");
+      const remoteVideo = document.getElementById("remoteVideo");
+
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localVideo.srcObject = localStream;
+
+      const roomRef = ref(db, "video-rooms/" + roomName);
+      const signalRef = push(roomRef);
+      onDisconnect(signalRef)(remove());
+
+      peer = new SimplePeer({ initiator: false, trickle: false, stream: localStream });
+
+      // Check if anyone is already in the room
+      get(roomRef).then(snapshot => {
+        if (!snapshot.exists()) {
+          // No one else — become the initiator
+          peer = new SimplePeer({ initiator: true, trickle: false, stream: localStream });
+          isCaller = true;
+
+          peer.on("signal", data => {
+            set(signalRef, { type: "offer", signal: JSON.stringify(data) });
+          });
+        }
+      });
+
+      peer.on("signal", data => {
+        if (!isCaller) {
+          set(signalRef, { type: "answer", signal: JSON.stringify(data) });
+        }
+      });
+
+      onValue(roomRef, snap => {
+        snap.forEach(child => {
+          const val = child.val();
+          if (!val || child.key === signalRef.key) return;
+          const { type, signal } = val;
+          if (signal && type) {
+            try {
+              peer.signal(JSON.parse(signal));
+            } catch (e) {
+              console.error("Invalid signal:", signal);
+            }
+          }
+        });
+      });
+
+      peer.on("stream", stream => {
+        remoteVideo.srcObject = stream;
+      });
+
+      peer.on("error", err => {
+        console.error("Peer error:", err);
+      });
+    }
+
+    window.startCall = startCall;
+  </script>
+</body>
+</html>
