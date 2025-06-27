@@ -277,9 +277,8 @@
       if (users[user] && users[user] === pass) {
         currentUser = user;
         // Set presence online
-        db.ref("presence/" + currentUser).set("online");
-        // Remove presence on disconnect
-        db.ref("presence/" + currentUser).onDisconnect().remove();
+        firebase.database().ref("presence/" + user).set("online");
+        firebase.database().ref("presence/" + user).onDisconnect().remove();
 
         document.getElementById("adminLogin").style.display = "none";
         document.getElementById("mainApp").style.display = "grid";
@@ -291,22 +290,12 @@
 
     function logoutUser() {
       if (currentUser) {
-        // Remove presence on logout
-        db.ref("presence/" + currentUser).remove();
+        firebase.database().ref("presence/" + currentUser).remove();
+        currentUser = null;
       }
-      currentUser = null;
       document.getElementById("mainApp").style.display = "none";
       document.getElementById("adminLogin").style.display = "flex";
-      document.getElementById("loginUsername").value = "";
-      document.getElementById("loginPassword").value = "";
-      document.getElementById("loginError").textContent = "";
     }
-
-    window.addEventListener("beforeunload", () => {
-      if (currentUser) {
-        db.ref("presence/" + currentUser).remove();
-      }
-    });
 
     function getTimeStamp() {
       const now = new Date();
@@ -372,6 +361,7 @@
       box.style.display = box.style.display === "none" ? "block" : "none";
     }
 
+    // New: Show online/offline status in profile search
     function searchProfile() {
       const name = document.getElementById("searchBox").value.trim();
       const resultBox = document.getElementById("profileResult");
@@ -379,23 +369,45 @@
         resultBox.innerHTML = "";
         return;
       }
-      // Fetch profile data
-      db.ref(`profiles/${name}`).once('value', snap => {
+
+      const profileRef = db.ref(`profiles/${name}`);
+      const presenceRef = db.ref(`presence/${name}`);
+
+      profileRef.once('value').then(snap => {
         const data = snap.val();
-        if (data) {
-          // Fetch presence
-          db.ref(`presence/${name}`).once('value', presenceSnap => {
-            const presenceStatus = presenceSnap.exists() ? "Online" : "Offline";
-            resultBox.innerHTML = `<strong>${name}</strong> - <em>${presenceStatus}</em><br><ul>` +
-              data.qualifications.map(q => `<li>${q}</li>`).join('') + '</ul>';
-          });
-        } else {
+        if (!data) {
           resultBox.innerHTML = 'Profile not found.';
+          return;
         }
+
+        presenceRef.once('value').then(presenceSnap => {
+          const isOnline = presenceSnap.exists();
+          const statusText = isOnline ? '<span style="color:#4CAF50;font-weight:bold;">Online</span>' : '<span style="color:#999;">Offline</span>';
+
+          resultBox.innerHTML = `<strong>${name}</strong> - Status: ${statusText}<br><ul>` +
+            data.qualifications.map(q => `<li>${q}</li>`).join('') + '</ul>';
+        });
       });
     }
 
     window.addEventListener('resize', () => map.invalidateSize());
+
+    // Add a logout button next to profileBtn without changing anything else
+    const logoutBtn = document.createElement('button');
+    logoutBtn.textContent = 'Logout';
+    logoutBtn.style.position = 'fixed';
+    logoutBtn.style.bottom = '15px';
+    logoutBtn.style.right = '135px';
+    logoutBtn.style.background = '#ff4c4c';
+    logoutBtn.style.color = 'white';
+    logoutBtn.style.border = 'none';
+    logoutBtn.style.padding = '10px 15px';
+    logoutBtn.style.borderRadius = '5px';
+    logoutBtn.style.cursor = 'pointer';
+    logoutBtn.style.zIndex = '1000';
+    logoutBtn.onclick = logoutUser;
+    document.body.appendChild(logoutBtn);
+
   </script>
 </body>
 </html>
